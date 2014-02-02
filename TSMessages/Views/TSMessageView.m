@@ -8,8 +8,8 @@
 
 #import "TSMessageView.h"
 #import "HexColor.h"
-#import "TSBlurView.h"
 #import "TSMessage.h"
+#import "UIImage+ImageEffects.h"
 
 
 #define TSMessageViewPadding 15.0
@@ -45,7 +45,7 @@ static NSMutableDictionary *_notificationDesign;
 @property (nonatomic, strong) UIButton *button;
 @property (nonatomic, strong) UIView *borderView;
 @property (nonatomic, strong) UIImageView *backgroundImageView;
-@property (nonatomic, strong) TSBlurView *backgroundBlurView; // Only used in iOS 7
+@property (nonatomic, strong) UIImageView *backgroundBlurView; // Only used in iOS 7
 
 @property (nonatomic, assign) CGFloat textSpaceLeft;
 @property (nonatomic, assign) CGFloat textSpaceRight;
@@ -148,28 +148,8 @@ static NSMutableDictionary *_notificationDesign;
             image = [UIImage imageNamed:[current valueForKey:@"imageName"]];
         }
         
-        if (![TSMessage iOS7StyleEnabled])
-        {
-            self.alpha = 0.0;
-            
-            // add background image here
-            UIImage *backgroundImage = [[UIImage imageNamed:[current valueForKey:@"backgroundImageName"]] stretchableImageWithLeftCapWidth:0.0 topCapHeight:0.0];
-            _backgroundImageView = [[UIImageView alloc] initWithImage:backgroundImage];
-            self.backgroundImageView.autoresizingMask = (UIViewAutoresizingFlexibleWidth);
-            [self addSubview:self.backgroundImageView];
-        }
-        else
-        {
-            // On iOS 7 and above use a blur layer instead (not yet finished)
-            _backgroundBlurView = [[TSBlurView alloc] init];
-            self.backgroundBlurView.autoresizingMask = (UIViewAutoresizingFlexibleWidth);
-            self.backgroundBlurView.blurTintColor = [UIColor colorWithHexString:current[@"backgroundColor"]];
-            [self addSubview:self.backgroundBlurView];
-        }
-        
         UIColor *fontColor = [UIColor colorWithHexString:[current valueForKey:@"textColor"]
                                                    alpha:1.0];
-        
         
         self.textSpaceLeft = 2 * TSMessageViewPadding;
         if (image) self.textSpaceLeft += image.size.width + 2 * TSMessageViewPadding;
@@ -325,6 +305,54 @@ static NSMutableDictionary *_notificationDesign;
             UITapGestureRecognizer *tapRec = [[UITapGestureRecognizer alloc] initWithTarget:self
                                                                                      action:@selector(fadeMeOut)];
             [self addGestureRecognizer:tapRec];
+        }
+        
+        if (![TSMessage iOS7StyleEnabled])
+        {
+            self.alpha = 0.0;
+            
+            // add background image here
+            UIImage *backgroundImage = [[UIImage imageNamed:[current valueForKey:@"backgroundImageName"]] stretchableImageWithLeftCapWidth:0.0 topCapHeight:0.0];
+            _backgroundImageView = [[UIImageView alloc] initWithImage:backgroundImage];
+            self.backgroundImageView.autoresizingMask = (UIViewAutoresizingFlexibleWidth);
+            [self addSubview:self.backgroundImageView];
+        }
+        else
+        {
+            // On iOS 7 and above use a blur layer instead
+            UIView *drawView = self.viewController.view;
+            CGFloat finalY = 0;
+            
+            if (self.messagePosition == TSMessageNotificationPositionBottom)
+            {
+                finalY = topPosition - actualHeight;
+            }
+            else if ([self.viewController respondsToSelector:@selector(topLayoutGuide)])
+            {
+                finalY = self.viewController.topLayoutGuide.length;
+            }
+            
+            CGRect blurRect = CGRectMake(0, finalY, screenWidth, actualHeight);
+            
+            // Use a scale of 1 indeendent of the actual device scale,
+            // because we are going to blur the image anyways
+            UIGraphicsBeginImageContextWithOptions(drawView.frame.size, YES, 1);
+            [drawView drawViewHierarchyInRect:drawView.bounds afterScreenUpdates:NO];
+            
+            UIImage *snapshotImage = UIGraphicsGetImageFromCurrentImageContext();
+            CGImageRef imageRef = CGImageCreateWithImageInRect(snapshotImage.CGImage, blurRect);
+            UIImage *croppedSnapshotImage = [UIImage imageWithCGImage:imageRef];
+            UIColor *blurTintColor = [UIColor colorWithHexString:current[@"backgroundColor"]];
+            UIImage *blurImage = [croppedSnapshotImage applyTintEffectWithColor:blurTintColor];
+            
+            UIGraphicsEndImageContext();
+            
+            _backgroundBlurView = [[UIImageView alloc] initWithImage:blurImage];
+            _backgroundBlurView.contentMode = UIViewContentModeScaleToFill;
+            self.backgroundBlurView.autoresizingMask = (UIViewAutoresizingNone);
+            
+            [self addSubview:self.backgroundBlurView];
+            [self sendSubviewToBack:self.backgroundBlurView];
         }
         
         UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
